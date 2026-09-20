@@ -22,6 +22,6 @@
 
 - Cuando el usuario pida actualizar el contenido a partir de información de una fuente para iniciar el desarrollo de una feature, se actualizará el encabezado de primer nivel con `# <título del issue>` (nombre de la feature) y las secciones `## Objetivos` y `## Notas`. No se añadirá una sección `## Referencia` ni una entrada a `## Histórico` indicando el inicio del desarrollo.
 - Cuando el usuario pida añadir contenido al histórico, se añadirá una entrada, preservando el orden previsto, con un resumen de una línea del trabajo realizado en la sesión.
-- Cuando el usuario pida limpiar o reiniciar este descriptor, se cambiará el encabezado de primer nivel a `# Feature actual`, se borrará el contenido de `## Objetivos` y `## Notas`, y se eliminarán las secciones no especificadas, preservando los encabezados requeridos.
+- Cuando el usuario pida limpiar o reiniciar este descriptor, se cambiará el encabezado de primer nivel a `# Feature actual`, se borrará el contenido de `## Objetivos` y `## Notas`, se eliminarán las secciones no especificadas preservando los encabezados requeridos, y se preservará el histórico añadiendo al principio una entrada de una línea con la issue implementada.
 - Al finalizar una feature se añadirá al principio de `## Histórico` una entrada de una línea que resuma el trabajo realizado.
 - El issue no se cerrará manualmente; el Pull Request utilizará `Closes #<issue-number>` para cerrarlo al fusionarse.
