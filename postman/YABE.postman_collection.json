@@ -1,0 +1,120 @@
+{
+  "info": {
+    "_postman_id": "9f2b0d3e-8c21-4c7a-9b3a-6d1e5f7a2c04",
+    "name": "YABE API",
+    "description": "Collection to test the YABE API endpoints (v1).\n\nSet the `baseUrl` variable to point to the running server, e.g. `http://localhost:8000/api/v1`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Hotels",
+      "item": [
+        {
+          "name": "List hotels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/hotels",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels"]
+            },
+            "description": "Returns the list of hotels. Contract: GET /hotels"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Room Types",
+      "item": [
+        {
+          "name": "List room types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/room-types",
+              "host": ["{{baseUrl}}"],
+              "path": ["room-types"]
+            },
+            "description": "Returns the list of room types. Contract: GET /room-types"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Availability",
+      "item": [
+        {
+          "name": "Check availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"hotel\": \"GRAND\",\n    \"roomType\": \"DELUXE\",\n    \"paxes\": 2,\n    \"checkin\": \"2026-10-06\",\n    \"checkout\": \"2026-10-09\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/availability",
+              "host": ["{{baseUrl}}"],
+              "path": ["availability"]
+            },
+            "description": "Checks room availability for the given dates. Contract: POST /availability"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"hotel\": \"GRAND\",\n    \"roomType\": \"DELUXE\",\n    \"paxes\": 2,\n    \"checkin\": \"2026-11-15\",\n    \"checkout\": \"2026-11-19\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings"]
+            },
+            "description": "Creates a booking. Contract: POST /bookings"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
