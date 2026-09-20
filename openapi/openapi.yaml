@@ -1,0 +1,290 @@
+openapi: 3.1.0
+
+info:
+  title: YABE API
+  version: 0.1.0
+  description: |
+    API for the Yet Another Booking Engine (YABE).
+
+servers:
+  - url: /api/v1
+    description: API v1
+
+tags:
+  - name: Hotels
+    description: Hotel operations
+  - name: Room Types
+    description: Room type operations
+  - name: Availability
+    description: Availability operations
+  - name: Bookings
+    description: Booking operations
+
+paths:
+  /hotels:
+    get:
+      tags:
+        - Hotels
+      summary: List hotels
+      operationId: listHotels
+      responses:
+        '200':
+          description: List of hotels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Hotel'
+
+  /room-types:
+    get:
+      tags:
+        - Room Types
+      summary: List room types
+      operationId: listRoomTypes
+      responses:
+        '200':
+          description: List of room types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoomType'
+
+  /availability:
+    post:
+      tags:
+        - Availability
+      summary: Check availability
+      operationId: checkAvailability
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityRequest'
+      responses:
+        '200':
+          description: Available rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Availability'
+
+  /bookings:
+    post:
+      tags:
+        - Bookings
+      summary: Create a booking
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+components:
+  schemas:
+
+    Hotel:
+      type: object
+      required:
+        - name
+        - code
+        - roomTypes
+      properties:
+        name:
+          type: string
+          description: Hotel name
+          example: Grand Hotel
+        code:
+          type: string
+          description: Unique hotel code
+          example: GRAND
+        roomTypes:
+          type: array
+          description: Room types available at the hotel and their inventory
+          items:
+            $ref: '#/components/schemas/HotelRoomType'
+
+    HotelRoomType:
+      type: object
+      required:
+        - roomType
+        - quantity
+        - price
+      properties:
+        roomType:
+          $ref: '#/components/schemas/RoomType'
+        quantity:
+          type: integer
+          minimum: 1
+          description: Number of rooms of this type available at the hotel
+          example: 20
+        price:
+          type: number
+          format: double
+          minimum: 0
+          description: Price of the room
+          example: 125.50
+
+    RoomType:
+      type: object
+      required:
+        - name
+        - code
+        - maxOccupancy
+      properties:
+        name:
+          type: string
+          description: Room type name
+          example: Deluxe Room
+        code:
+          type: string
+          description: Unique room type code
+          example: DELUXE
+        maxOccupancy:
+          type: integer
+          minimum: 1
+          description: Maximum number of guests that can occupy the room
+          example: 2
+
+    AvailabilityRequest:
+      type: object
+      required:
+        - paxes
+        - checkin
+        - checkout
+      properties:
+        hotel:
+          type: string
+          description: Hotel code
+          example: GRAND
+        roomType:
+          type: string
+          description: Room type code
+          example: DELUXE
+        paxes:
+          type: integer
+          minimum: 1
+          description: Number of guests
+          example: 2
+        checkin:
+          type: string
+          format: date
+          description: Check-in date
+          example: '2026-10-01'
+        checkout:
+          type: string
+          format: date
+          description: Check-out date
+          example: '2026-10-05'
+
+    Availability:
+      type: object
+      required:
+        - hotel
+        - roomType
+        - price
+      properties:
+        hotel:
+          $ref: '#/components/schemas/Hotel'
+        roomType:
+          $ref: '#/components/schemas/RoomType'
+        price:
+          type: number
+          format: double
+          minimum: 0
+          description: Price for the available room
+          example: 125.50
+
+    CreateBookingRequest:
+      type: object
+      required:
+        - hotel
+        - roomType
+        - paxes
+        - checkin
+        - checkout
+      properties:
+        hotel:
+          type: string
+          description: Hotel code
+          example: GRAND
+        roomType:
+          type: string
+          description: Room type code
+          example: DELUXE
+        paxes:
+          type: integer
+          minimum: 1
+          description: Number of guests
+          example: 2
+        checkin:
+          type: string
+          format: date
+          description: Check-in date
+          example: '2026-10-01'
+        checkout:
+          type: string
+          format: date
+          description: Check-out date
+          example: '2026-10-05'
+
+    Booking:
+      type: object
+      required:
+        - locator
+        - hotel
+        - roomType
+        - paxes
+        - checkin
+        - checkout
+        - status
+      properties:
+        locator:
+          type: string
+          description: Booking locator
+          example: ABC123
+        hotel:
+          type: string
+          description: Hotel code
+          example: GRAND
+        roomType:
+          type: string
+          description: Room type code
+          example: DELUXE
+        paxes:
+          type: integer
+          minimum: 1
+          description: Number of guests
+          example: 2
+        checkin:
+          type: string
+          format: date
+          description: Check-in date
+          example: '2026-10-01'
+        checkout:
+          type: string
+          format: date
+          description: Check-out date
+          example: '2026-10-05'
+        status:
+          type: string
+          enum:
+            - CONFIRMED
+            - CANCELLED
+          description: Booking status
+          example: CONFIRMED
