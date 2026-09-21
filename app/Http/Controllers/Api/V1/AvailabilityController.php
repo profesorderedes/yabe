@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Api\V1\Concerns\SerializesMockData;
 use App\Http\Controllers\Controller;
-use App\Models\Booking;
 use App\Models\HotelRoomType;
+use App\Services\AvailabilityService;
 use App\Services\MockDataService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,7 +18,7 @@ class AvailabilityController extends Controller
     /**
      * Check availability.
      */
-    public function check(Request $request, MockDataService $service): JsonResponse
+    public function check(Request $request, AvailabilityService $availability, MockDataService $service): JsonResponse
     {
         $result = $this->validated($request, [
             'hotel' => ['nullable', 'string'],
@@ -33,16 +33,15 @@ class AvailabilityController extends Controller
         }
 
         $data = $result;
-        $checkin = $data['checkin'];
-        $checkout = $data['checkout'];
-        $paxes = (int) $data['paxes'];
 
-        $available = $service->hotelRoomTypes()
-            ->filter(fn (HotelRoomType $relation) => $relation->roomType->max_occupancy >= $paxes)
-            ->filter(fn (HotelRoomType $relation) => is_null($data['hotel'] ?? null) || $relation->hotel->code === $data['hotel'])
-            ->filter(fn (HotelRoomType $relation) => is_null($data['roomType'] ?? null) || $relation->roomType->code === $data['roomType'])
-            ->filter(fn (HotelRoomType $relation) => $this->hasAvailableUnits($service, $relation, $checkin, $checkout))
-            ->values()
+        $available = $availability
+            ->availableRoomTypes(
+                paxes: (int) $data['paxes'],
+                checkin: $data['checkin'],
+                checkout: $data['checkout'],
+                hotel: $data['hotel'] ?? null,
+                roomType: $data['roomType'] ?? null,
+            )
             ->map(fn (HotelRoomType $relation) => [
                 'hotel' => $this->hotelPayload($service, $relation->hotel),
                 'roomType' => $this->roomTypePayload($relation->roomType),
@@ -50,19 +49,6 @@ class AvailabilityController extends Controller
             ]);
 
         return response()->json($available);
-    }
-
-    private function hasAvailableUnits(MockDataService $service, HotelRoomType $relation, string $checkin, string $checkout): bool
-    {
-        $overlapping = $service->bookings()
-            ->filter(fn (Booking $booking) => $booking->status === 'CONFIRMED')
-            ->filter(fn (Booking $booking) => $booking->hotel->code === $relation->hotel->code)
-            ->filter(fn (Booking $booking) => $booking->roomType->code === $relation->roomType->code)
-            ->filter(fn (Booking $booking) => $booking->checkin->format('Y-m-d') < $checkout
-                && $booking->checkout->format('Y-m-d') > $checkin)
-            ->count();
-
-        return $relation->quantity - $overlapping >= 1;
     }
 
     /**
