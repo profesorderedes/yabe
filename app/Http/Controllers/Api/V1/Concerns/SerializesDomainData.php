@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers\Api\V1\Concerns;
 
+use App\Contracts\DataService;
 use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\HotelRoomType;
 use App\Models\RoomType;
-use App\Services\MockDataService;
 
-trait SerializesMockData
+trait SerializesDomainData
 {
     /**
      * @return array<string, mixed>
@@ -25,7 +25,7 @@ trait SerializesMockData
     /**
      * @return array<string, mixed>
      */
-    private function hotelPayload(MockDataService $service, Hotel $hotel): array
+    private function hotelPayload(DataService $service, Hotel $hotel): array
     {
         return [
             'name' => $hotel->name,

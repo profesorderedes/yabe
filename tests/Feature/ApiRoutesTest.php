@@ -2,11 +2,22 @@
 
 namespace Tests\Feature;
 
+use Database\Seeders\DomainDataSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ApiRoutesTest extends TestCase
 {
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->seed(DomainDataSeeder::class);
+    }
+
     #[DataProvider('routeProvider')]
     public function test_api_routes_are_reachable(string $method, string $uri, int $status, array $body): void
     {

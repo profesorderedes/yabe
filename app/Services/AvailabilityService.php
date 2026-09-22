@@ -2,13 +2,14 @@
 
 namespace App\Services;
 
+use App\Contracts\DataService;
 use App\Models\Booking;
 use App\Models\HotelRoomType;
 use Illuminate\Support\Collection;
 
 class AvailabilityService
 {
-    public function __construct(private readonly MockDataService $data) {}
+    public function __construct(private readonly DataService $data) {}
 
     /**
      * Find the hotel room types that are available for the given criteria.

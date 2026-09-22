@@ -2,14 +2,25 @@
 
 namespace Tests\Feature;
 
+use App\Contracts\DataService;
 use App\Models\Booking;
-use App\Services\MockDataService;
+use Database\Seeders\DomainDataSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 class AvailabilityTest extends TestCase
 {
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->seed(DomainDataSeeder::class);
+    }
+
     public function test_availability_without_overlapping_bookings(): void
     {
         $response = $this->postAvailability([
@@ -198,6 +209,25 @@ class AvailabilityTest extends TestCase
         ])->assertOk()->assertJsonPath('0.price', 175);
     }
 
+    public function test_a_created_booking_reduces_the_available_inventory(): void
+    {
+        $this->postJson('/api/v1/bookings', [
+            'hotel' => 'GRAND',
+            'roomType' => 'STANDARD',
+            'paxes' => 1,
+            'checkin' => '2026-10-10',
+            'checkout' => '2026-10-12',
+        ])->assertCreated();
+
+        $this->postAvailability([
+            'hotel' => 'GRAND',
+            'roomType' => 'STANDARD',
+            'paxes' => 1,
+            'checkin' => '2026-10-10',
+            'checkout' => '2026-10-12',
+        ])->assertOk()->assertJsonCount(1);
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */
@@ -208,7 +238,7 @@ class AvailabilityTest extends TestCase
 
     private function occupy(string $hotelCode, string $roomTypeCode, int $units, string $checkin, string $checkout): void
     {
-        $service = app(MockDataService::class);
+        $service = app(DataService::class);
         $hotel = $service->hotelByCode($hotelCode);
         $roomType = $service->roomTypeByCode($roomTypeCode);
 
