@@ -2,7 +2,8 @@
 
 namespace App\Providers;
 
-use App\Services\MockDataService;
+use App\Contracts\DataService;
+use App\Services\EloquentDataService;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -12,7 +13,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(MockDataService::class);
+        $this->app->singleton(DataService::class, EloquentDataService::class);
     }
 
     /**

@@ -2,23 +2,23 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Http\Controllers\Api\V1\Concerns\SerializesMockData;
+use App\Contracts\DataService;
+use App\Http\Controllers\Api\V1\Concerns\SerializesDomainData;
 use App\Http\Controllers\Controller;
 use App\Models\HotelRoomType;
 use App\Services\AvailabilityService;
-use App\Services\MockDataService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class AvailabilityController extends Controller
 {
-    use SerializesMockData;
+    use SerializesDomainData;
 
     /**
      * Check availability.
      */
-    public function check(Request $request, AvailabilityService $availability, MockDataService $service): JsonResponse
+    public function check(Request $request, AvailabilityService $availability, DataService $service): JsonResponse
     {
         $result = $this->validated($request, [
             'hotel' => ['nullable', 'string'],

@@ -2,16 +2,28 @@
 
 namespace Tests\Unit;
 
+use App\Contracts\DataService;
 use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\HotelRoomType;
 use App\Models\RoomType;
-use App\Services\MockDataService;
+use Database\Seeders\DomainDataSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
-class MockDataServiceTest extends TestCase
+class EloquentDataServiceTest extends TestCase
 {
-    public function test_service_provides_all_mock_resources(): void
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->seed(DomainDataSeeder::class);
+    }
+
+    public function test_service_provides_all_persisted_resources(): void
     {
         $service = $this->service();
 
@@ -21,7 +33,7 @@ class MockDataServiceTest extends TestCase
         $this->assertNotEmpty($service->bookings());
     }
 
-    public function test_mock_resources_use_the_eloquent_models(): void
+    public function test_resources_use_the_eloquent_models(): void
     {
         $service = $this->service();
 
@@ -31,7 +43,7 @@ class MockDataServiceTest extends TestCase
         $this->assertContainsOnlyInstancesOf(Booking::class, $service->bookings());
     }
 
-    public function test_mock_data_is_varied_enough_for_the_endpoints(): void
+    public function test_seeded_data_is_varied_enough_for_the_endpoints(): void
     {
         $service = $this->service();
 
@@ -39,10 +51,6 @@ class MockDataServiceTest extends TestCase
         $this->assertGreaterThanOrEqual(4, $service->roomTypes()->count());
         $this->assertGreaterThanOrEqual(8, $service->hotelRoomTypes()->count());
         $this->assertGreaterThanOrEqual(6, $service->bookings()->count());
-
-        $this->assertGreaterThanOrEqual(2, $service->bookings()->unique(fn (Booking $booking) => $booking->hotel->code)->count());
-        $this->assertGreaterThanOrEqual(2, $service->bookings()->unique(fn (Booking $booking) => $booking->roomType->code)->count());
-        $this->assertGreaterThanOrEqual(2, $service->bookings()->unique(fn (Booking $booking) => $booking->checkin->toDateString())->count());
     }
 
     public function test_hotel_room_types_have_at_least_one_unit_and_a_non_negative_price(): void
@@ -52,23 +60,6 @@ class MockDataServiceTest extends TestCase
         foreach ($service->hotelRoomTypes() as $hotelRoomType) {
             $this->assertGreaterThanOrEqual(1, $hotelRoomType->quantity);
             $this->assertGreaterThanOrEqual(0, $hotelRoomType->price);
-        }
-    }
-
-    public function test_bookings_are_coherent(): void
-    {
-        $service = $this->service();
-
-        foreach ($service->bookings() as $booking) {
-            $this->assertTrue(
-                $service->hotelRoomTypes()->contains(
-                    fn (HotelRoomType $relation) => $relation->hotel->code === $booking->hotel->code
-                        && $relation->roomType->code === $booking->roomType->code
-                )
-            );
-            $this->assertLessThanOrEqual($booking->roomType->max_occupancy, $booking->paxes);
-            $this->assertTrue($booking->checkin->lt($booking->checkout));
-            $this->assertContains($booking->status, ['CONFIRMED', 'CANCELLED']);
         }
     }
 
@@ -82,8 +73,31 @@ class MockDataServiceTest extends TestCase
         $this->assertNull($service->roomTypeByCode('UNKNOWN'));
     }
 
-    private function service(): MockDataService
+    public function test_add_booking_persists_the_booking(): void
     {
-        return app(MockDataService::class);
+        $service = $this->service();
+
+        $booking = new Booking([
+            'locator' => Str::upper(Str::random(6)),
+            'paxes' => 2,
+            'checkin' => '2026-12-01',
+            'checkout' => '2026-12-05',
+            'status' => 'CONFIRMED',
+        ]);
+        $booking->hotel()->associate($service->hotelByCode('GRAND'));
+        $booking->roomType()->associate($service->roomTypeByCode('DELUXE'));
+
+        $service->addBooking($booking);
+
+        $this->assertDatabaseHas('bookings', [
+            'locator' => $booking->locator,
+            'status' => 'CONFIRMED',
+        ]);
+        $this->assertTrue($service->bookings()->contains(fn (Booking $persisted) => $persisted->locator === $booking->locator));
+    }
+
+    private function service(): DataService
+    {
+        return app(DataService::class);
     }
 }

@@ -2,10 +2,21 @@
 
 namespace Tests\Feature;
 
+use Database\Seeders\DomainDataSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-class MockApiEndpointsTest extends TestCase
+class ApiEndpointsTest extends TestCase
 {
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->seed(DomainDataSeeder::class);
+    }
+
     public function test_hotels_endpoint_returns_hotels_with_room_types(): void
     {
         $response = $this->getJson('/api/v1/hotels');

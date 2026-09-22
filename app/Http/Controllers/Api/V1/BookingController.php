@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Http\Controllers\Api\V1\Concerns\SerializesMockData;
+use App\Contracts\DataService;
+use App\Http\Controllers\Api\V1\Concerns\SerializesDomainData;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\HotelRoomType;
-use App\Services\MockDataService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -14,12 +14,12 @@ use Illuminate\Support\Str;
 
 class BookingController extends Controller
 {
-    use SerializesMockData;
+    use SerializesDomainData;
 
     /**
      * Create a booking.
      */
-    public function store(Request $request, MockDataService $service): JsonResponse
+    public function store(Request $request, DataService $service): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'hotel' => ['required', 'string'],
@@ -72,7 +72,7 @@ class BookingController extends Controller
         return response()->json($this->bookingPayload($booking), 201);
     }
 
-    private function generateLocator(MockDataService $service): string
+    private function generateLocator(DataService $service): string
     {
         do {
             $locator = Str::upper(Str::random(6));
