@@ -1,5 +1,10 @@
 *.log
+*.py[cod]
 .DS_Store
+/.venv
+/__pycache__
+/mcp/logs
+/mcp/__pycache__
 .env
 .env.backup
 .env.production
