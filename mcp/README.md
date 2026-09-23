@@ -56,12 +56,21 @@ El servidor `hotels-mcp` debe aparecer conectado, sin el estado `Connection clos
 
 | Herramienta                 | Descripción                                            |
 | --------------------------- | ------------------------------------------------------ |
-| `get_hotels`                | Lista de hoteles simulados.                            |
-| `get_room_types`            | Lista de tipos de habitación simulados.                |
-| `get_bookings`              | Reservas simuladas, filtrables por hotel y estado.     |
-| `get_bookings_statistics`   | Estadísticas simuladas sobre las reservas.             |
+| `get_hotels`                | Hoteles de la aplicación con sus tipos de habitación.  |
+| `get_room_types`            | Tipos de habitación de la aplicación.                  |
+| `get_bookings`              | Reservas de la aplicación, filtrables por código de hotel y estado. |
+| `get_bookings_statistics`   | Estadísticas calculadas sobre las reservas reales.     |
 
-En esta primera versión las herramientas devuelven datos simulados y no acceden a la persistencia de la aplicación.
+Las herramientas consultan directamente la persistencia local de la aplicación y no utilizan datos simulados.
+
+## Acceso a la persistencia
+
+El servidor lee la configuración de persistencia del `.env` de la aplicación (en la raíz del proyecto) y abre en modo lectura la misma base de datos que utiliza la aplicación en el entorno local:
+
+- `DB_CONNECTION=sqlite`: configuración soportada.
+- `DB_DATABASE`: ruta de la base de datos; si no se define, se utiliza `database/database.sqlite`.
+
+Antes de usar el servidor asegúrate de que la base de datos exista y tenga datos (p. ej. `php artisan migrate --seed`). Si no se encuentra o la conexión no es `sqlite`, las herramientas devuelven un error al cliente sin terminar el servidor.
 
 ## Logs
 

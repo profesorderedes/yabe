@@ -1,12 +1,16 @@
 import json
 import logging
 import os
+import sqlite3
+from pathlib import Path
 from typing import Any
 
 from mcp.server.context import CallNext, ServerRequestContext
 from mcp.server.mcpserver import MCPServer
 
-LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+LOGS_DIR = Path(__file__).resolve().parent / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 protocol_logger = logging.getLogger("mcp.protocol")
 operations_logger = logging.getLogger("mcp.operations")
@@ -18,7 +22,7 @@ for _logger, _file_name in (
     if not _logger.handlers:
         _logger.setLevel(logging.INFO)
         _logger.propagate = False
-        _handler = logging.FileHandler(os.path.join(LOGS_DIR, _file_name), encoding="utf-8")
+        _handler = logging.FileHandler(LOGS_DIR / _file_name, encoding="utf-8")
         _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
         _logger.addHandler(_handler)
 
@@ -79,58 +83,213 @@ class ProtocolLoggingMiddleware:
         return result
 
 
-MOCK_HOTELS = [
-    {"id": "H1", "name": "Hotel Central", "city": "Madrid"},
-    {"id": "H2", "name": "Hotel Playa Dorada", "city": "Málaga"},
-    {"id": "H3", "name": "Hotel Montaña Verde", "city": "Granada"},
-]
-
-MOCK_ROOM_TYPES = [
-    {"id": "RT1", "name": "Single", "capacity": 1},
-    {"id": "RT2", "name": "Double", "capacity": 2},
-    {"id": "RT3", "name": "Family", "capacity": 4},
-]
-
-MOCK_BOOKINGS = [
-    {"id": "B1", "hotel_id": "H1", "room_type_id": "RT2", "guest_name": "Ana García", "check_in": "2026-10-01", "check_out": "2026-10-03"},
-    {"id": "B2", "hotel_id": "H2", "room_type_id": "RT1", "guest_name": "Luis Pérez", "check_in": "2026-10-02", "check_out": "2026-10-04"},
-    {"id": "B3", "hotel_id": "H1", "room_type_id": "RT3", "guest_name": "Marta Ruiz", "check_in": "2026-10-05", "check_out": "2026-10-08"},
-]
+def _parse_env_file(path: Path) -> dict[str, str]:
+    variables: dict[str, str] = {}
+    if not path.is_file():
+        return variables
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, separator, value = line.partition("=")
+        if not separator:
+            continue
+        variables[key.strip()] = _unquote(_strip_inline_comment(value.strip()))
+    return variables
 
 
-server = MCPServer(name="hotels-mcp", version="0.1.0", middleware=[ProtocolLoggingMiddleware()])
+def _strip_inline_comment(value: str) -> str:
+    quote: str | None = None
+    for index, char in enumerate(value):
+        if char in ("'", '"'):
+            if quote is None:
+                quote = char
+            elif char == quote:
+                quote = None
+        elif char == "#" and quote is None and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value
 
 
-@server.tool(description="List the sample hotels available in the booking engine.")
+def _unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        return value[1:-1]
+    return value
+
+
+class ApplicationData:
+    """Read access to the application persistence using its local configuration."""
+
+    def __init__(self, project_root: Path = PROJECT_ROOT) -> None:
+        self.project_root = project_root
+        self._env = _parse_env_file(project_root / ".env")
+
+    def database_path(self) -> Path:
+        connection = self._env.get("DB_CONNECTION", "sqlite")
+        if connection != "sqlite":
+            raise RuntimeError(
+                f"Unsupported DB_CONNECTION '{connection}': the MCP server only supports 'sqlite'."
+            )
+        database = self._env.get("DB_DATABASE", "database/database.sqlite")
+        path = Path(database)
+        if not path.is_absolute():
+            path = self.project_root / path
+        return path
+
+    def _connect(self) -> sqlite3.Connection:
+        path = self.database_path()
+        if not path.is_file():
+            raise RuntimeError(
+                f"Application database not found at '{path}'. Create it with 'php artisan migrate --seed' before using the MCP server."
+            )
+        connection = sqlite3.connect(path, timeout=5)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def hotels(self) -> list[dict[str, Any]]:
+        connection = self._connect()
+        try:
+            hotel_rows = connection.execute(
+                "SELECT id, name, code FROM hotels ORDER BY id"
+            ).fetchall()
+            room_type_rows = connection.execute(
+                """
+                SELECT hrt.hotel_id, hrt.quantity, hrt.price,
+                       rt.code, rt.name, rt.max_occupancy
+                FROM hotel_room_types hrt
+                JOIN room_types rt ON rt.id = hrt.room_type_id
+                ORDER BY rt.id
+                """
+            ).fetchall()
+        finally:
+            connection.close()
+
+        room_types_by_hotel: dict[int, list[dict[str, Any]]] = {}
+        for row in room_type_rows:
+            room_types_by_hotel.setdefault(row["hotel_id"], []).append(
+                {
+                    "roomType": {
+                        "name": row["name"],
+                        "code": row["code"],
+                        "maxOccupancy": row["max_occupancy"],
+                    },
+                    "quantity": row["quantity"],
+                    "price": row["price"],
+                }
+            )
+
+        return [
+            {
+                "name": row["name"],
+                "code": row["code"],
+                "roomTypes": room_types_by_hotel.get(row["id"], []),
+            }
+            for row in hotel_rows
+        ]
+
+    def roomTypes(self) -> list[dict[str, Any]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT name, code, max_occupancy FROM room_types ORDER BY id"
+            ).fetchall()
+        finally:
+            connection.close()
+
+        return [
+            {"name": row["name"], "code": row["code"], "maxOccupancy": row["max_occupancy"]}
+            for row in rows
+        ]
+
+    def bookings(
+        self,
+        hotel: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT b.locator, b.paxes, b.checkin, b.checkout, b.status,
+                       h.code AS hotel_code, rt.code AS room_type_code
+                FROM bookings b
+                JOIN hotels h ON h.id = b.hotel_id
+                JOIN room_types rt ON rt.id = b.room_type_id
+                WHERE (? IS NULL OR h.code = ?) AND (? IS NULL OR b.status = ?)
+                ORDER BY b.checkin
+                """,
+                (hotel, hotel, status, status),
+            ).fetchall()
+        finally:
+            connection.close()
+
+        return [
+            {
+                "locator": row["locator"],
+                "hotel": row["hotel_code"],
+                "roomType": row["room_type_code"],
+                "paxes": row["paxes"],
+                "checkin": row["checkin"],
+                "checkout": row["checkout"],
+                "status": row["status"],
+            }
+            for row in rows
+        ]
+
+    def bookingsStatistics(self) -> dict[str, Any]:
+        bookings = self.bookings()
+
+        bookings_by_hotel: dict[str, int] = {}
+        bookings_by_status: dict[str, int] = {}
+        total_guests = 0
+
+        for booking in bookings:
+            bookings_by_hotel[booking["hotel"]] = bookings_by_hotel.get(booking["hotel"], 0) + 1
+            bookings_by_status[booking["status"]] = bookings_by_status.get(booking["status"], 0) + 1
+            total_guests += booking["paxes"]
+
+        return {
+            "total_bookings": len(bookings),
+            "total_guests": total_guests,
+            "bookings_by_hotel": bookings_by_hotel,
+            "bookings_by_status": bookings_by_status,
+        }
+
+
+def _guard(operation: Any, *args: Any) -> Any:
+    try:
+        return operation(*args)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+server = MCPServer(name="hotels-mcp", version="0.2.0", middleware=[ProtocolLoggingMiddleware()])
+
+data = ApplicationData()
+
+
+@server.tool(description="List the hotels stored in the application, with their room types.")
 def get_hotels() -> str:
-    return json.dumps(MOCK_HOTELS, ensure_ascii=False)
+    return json.dumps(_guard(data.hotels), ensure_ascii=False)
 
 
-@server.tool(description="List the sample room types available in the booking engine.")
+@server.tool(description="List the room types stored in the application.")
 def get_room_types() -> str:
-    return json.dumps(MOCK_ROOM_TYPES, ensure_ascii=False)
+    return json.dumps(_guard(data.roomTypes), ensure_ascii=False)
 
 
 @server.tool(
-    description="List sample bookings, optionally filtered by hotel and booking status.",
+    description="List the bookings stored in the application, optionally filtered by hotel code and status.",
 )
-def get_bookings(hotel_id: str | None = None, status: str | None = None) -> str:
-    bookings = MOCK_BOOKINGS
-    if hotel_id is not None:
-        bookings = [b for b in bookings if b["hotel_id"] == hotel_id]
-    if status is not None:
-        bookings = [b for b in bookings if b.get("status") == status]
-    return json.dumps(bookings, ensure_ascii=False)
+def get_bookings(hotel: str | None = None, status: str | None = None) -> str:
+    return json.dumps(_guard(data.bookings, hotel, status), ensure_ascii=False)
 
 
-@server.tool(description="Return simulated statistics about the sample bookings.")
+@server.tool(description="Return statistics computed from the bookings stored in the application.")
 def get_bookings_statistics() -> str:
-    statistics = {
-        "total_bookings": len(MOCK_BOOKINGS),
-        "total_guests": 3,
-        "bookings_by_hotel": {"H1": 2, "H2": 1},
-    }
-    return json.dumps(statistics, ensure_ascii=False)
+    return json.dumps(_guard(data.bookingsStatistics), ensure_ascii=False)
 
 
 if __name__ == "__main__":
