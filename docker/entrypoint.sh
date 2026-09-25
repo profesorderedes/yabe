@@ -17,6 +17,8 @@ mkdir -p \
     storage/logs \
     bootstrap/cache
 
+touch "$DATA_DIR/database.sqlite"
+
 chown -R www-data:www-data "$DATA_DIR" storage bootstrap/cache 2>/dev/null || true
 
 # Bootstrap the environment file on first boot.
@@ -25,9 +27,8 @@ if [ ! -f .env ]; then
     chown www-data:www-data .env 2>/dev/null || true
 fi
 
-# Point SQLite at the mounted volume. This must live in the .env file rather
-# than only in the process environment, because `php artisan serve` filters
-# the environment variables passed to the PHP built-in server process.
+# Keep the SQLite path in .env as a fallback. Production passes it through the
+# container environment, which `php artisan serve --no-reload` preserves.
 if ! grep -qE '^DB_DATABASE=' .env; then
     printf '\nDB_DATABASE=%s\n' "$DATA_DIR/database.sqlite" >> .env
 fi
@@ -42,7 +43,7 @@ as_www_data() {
 
 # Generate the application key only when it is missing, so the key stays
 # stable across container restarts.
-if ! grep -qE '^APP_KEY=base64:' .env; then
+if [ -z "${APP_KEY:-}" ] && ! grep -qE '^APP_KEY=base64:' .env; then
     echo "==> Generating application key"
     as_www_data php artisan key:generate --force
 fi
@@ -54,7 +55,7 @@ echo "==> Seeding the database"
 as_www_data php artisan db:seed --force
 
 if [ "$#" -eq 0 ]; then
-    set -- php artisan serve --host=0.0.0.0 --port=8000
+    set -- php artisan serve --host=0.0.0.0 --port=8000 --no-reload
 fi
 
 echo "==> Starting Laravel"
