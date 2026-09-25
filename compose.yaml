@@ -1,0 +1,15 @@
+name: yabe
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - sqlite-data:/var/www/html/data
+    restart: unless-stopped
+
+volumes:
+  sqlite-data:
