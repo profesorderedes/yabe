@@ -1,0 +1,54 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Environment files
+.env
+.env.backup
+.env.production
+.env.local
+.phpunit.result.cache
+.phpunit.cache
+
+# PHP
+/vendor
+composer.phar
+/auth.json
+
+# Node
+/node_modules
+npm-debug.log
+
+# Build assets (they are produced inside the Docker build)
+/public/build
+/public/hot
+/public/storage
+/public/fonts-manifest.dev.json
+
+# Runtime data and logs
+/storage/*.key
+/storage/pail
+/storage/logs/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/data/*.sqlite
+
+# Editors / OS
+.vscode
+.idea
+.editorconfig
+Thumbs.db
+.DS_Store
+
+# Agent and tooling directories
+.opencode
+context
+mcp
+postman
+openapi
+docs
+
+# Tests
+tests

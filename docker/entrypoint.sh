@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+APP_DIR=/var/www/html
+DATA_DIR="$APP_DIR/data"
+
+cd "$APP_DIR"
+
+# Create the directories Laravel needs to write to at runtime and grant the
+# web user access to them (migrations and seed write to the SQLite database
+# that lives inside the data volume).
+mkdir -p \
+    "$DATA_DIR" \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache
+
+chown -R www-data:www-data "$DATA_DIR" storage bootstrap/cache 2>/dev/null || true
+
+# Bootstrap the environment file on first boot.
+if [ ! -f .env ]; then
+    cp .env.example .env
+    chown www-data:www-data .env 2>/dev/null || true
+fi
+
+# Point SQLite at the mounted volume. This must live in the .env file rather
+# than only in the process environment, because `php artisan serve` filters
+# the environment variables passed to the PHP built-in server process.
+if ! grep -qE '^DB_DATABASE=' .env; then
+    printf '\nDB_DATABASE=%s\n' "$DATA_DIR/database.sqlite" >> .env
+fi
+
+as_www_data() {
+    if [ "$(id -u)" = "0" ]; then
+        runuser -u www-data -- "$@"
+    else
+        "$@"
+    fi
+}
+
+# Generate the application key only when it is missing, so the key stays
+# stable across container restarts.
+if ! grep -qE '^APP_KEY=base64:' .env; then
+    echo "==> Generating application key"
+    as_www_data php artisan key:generate --force
+fi
+
+echo "==> Running database migrations"
+as_www_data php artisan migrate --force
+
+echo "==> Seeding the database"
+as_www_data php artisan db:seed --force
+
+if [ "$#" -eq 0 ]; then
+    set -- php artisan serve --host=0.0.0.0 --port=8000
+fi
+
+echo "==> Starting Laravel"
+if [ "$(id -u)" = "0" ]; then
+    exec runuser -u www-data -- "$@"
+fi
+exec "$@"
