@@ -6,6 +6,7 @@
 
 ## Histórico
 
+- 2026-09-26: Implementada la feature "Automatizar el despliegue mediante GitHub Actions" (issue #26).
 - 2026-09-25: Implementada la feature "Dockerizar aplicación para ejecución local" (issue #24).
 - 2026-09-23: Implementada la feature "Conectar el MCP Server con los datos reales" (issue #21).
 - 2026-09-23: Implementada la feature "Implementar base de servidor MCP local" (issue #20).

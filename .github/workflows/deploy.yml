@@ -1,0 +1,263 @@
+name: Deploy to VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Docker image platform
+        required: true
+        default: linux/amd64
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
+  push:
+    branches:
+      - profesorderedes/automatizar-el-despliegue-mediante-github-action
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+      github.ref == 'refs/heads/profesorderedes/automatizar-el-despliegue-mediante-github-action'
+    environment: production
+    name: Deploy application
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        if: (inputs.platform || 'linux/amd64') == 'linux/arm64'
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
+
+      - name: Build application image
+        env:
+          DOCKER_PLATFORM: ${{ inputs.platform || 'linux/amd64' }}
+          IMAGE_NAME: yabe:${{ github.sha }}
+        run: docker build --platform "$DOCKER_PLATFORM" --file Dockerfile --tag "$IMAGE_NAME" .
+
+      - name: Export application image
+        env:
+          IMAGE_NAME: yabe:${{ github.sha }}
+          IMAGE_ARCHIVE: yabe-${{ github.sha }}.tar.gz
+        run: |
+          set -euo pipefail
+          docker save "$IMAGE_NAME" | gzip -9 > "$RUNNER_TEMP/$IMAGE_ARCHIVE"
+          test -s "$RUNNER_TEMP/$IMAGE_ARCHIVE"
+
+      - name: Transfer and deploy application
+        env:
+          IMAGE_NAME: yabe:${{ github.sha }}
+          IMAGE_ARCHIVE: yabe-${{ github.sha }}.tar.gz
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          : "${VPS_HOST:?VPS_HOST secret is required}"
+          : "${VPS_USER:?VPS_USER secret is required}"
+          : "${VPS_SSH_KEY:?VPS_SSH_KEY secret is required}"
+
+          image_path="$RUNNER_TEMP/$IMAGE_ARCHIVE"
+          test -s "$image_path"
+
+          ssh_dir="$(mktemp -d "$RUNNER_TEMP/ssh.XXXXXX")"
+          target="$VPS_USER@$VPS_HOST"
+          remote_dir=""
+
+          private_key="$ssh_dir/vps_key"
+          known_hosts="$ssh_dir/known_hosts"
+
+          printf '%s\n' "$VPS_SSH_KEY" > "$private_key"
+          ssh-keyscan -H "$VPS_HOST" > "$known_hosts"
+          test -s "$known_hosts"
+          chmod 600 "$private_key" "$known_hosts"
+
+          ssh_options=(
+            -i "$private_key"
+            -o BatchMode=yes
+            -o CheckHostIP=no
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$known_hosts"
+            -o ConnectTimeout=15
+          )
+
+          cleanup() {
+              status=$?
+              trap - EXIT
+
+              if [ -n "$remote_dir" ]; then
+                  ssh "${ssh_options[@]}" "$target" "rm -rf -- $remote_dir" >/dev/null 2>&1 || true
+              fi
+
+              rm -rf "$ssh_dir" || true
+              exit "$status"
+          }
+
+          trap cleanup EXIT
+
+          remote_dir="$(ssh "${ssh_options[@]}" "$target" 'mktemp -d /tmp/yabe-deploy.XXXXXX')"
+
+          case "$remote_dir" in
+              /tmp/yabe-deploy.*) ;;
+              *) exit 1 ;;
+          esac
+
+          scp "${ssh_options[@]}" "$image_path" "${target}:${remote_dir}/image.tar.gz"
+          scp "${ssh_options[@]}" "compose.production.yaml" "${target}:${remote_dir}/compose.yaml"
+
+          ssh "${ssh_options[@]}" "$target" bash -s -- "$remote_dir" "$IMAGE_NAME" <<'REMOTE'
+          set -eu
+
+          remote_dir="$1"
+          image_name="$2"
+          deploy_dir="$HOME/yabe"
+          env_file="$deploy_dir/.env"
+          compose_file="$deploy_dir/compose.yaml"
+          image_archive="$remote_dir/image.tar.gz"
+          compose_source="$remote_dir/compose.yaml"
+
+          case "$remote_dir" in
+              /tmp/yabe-deploy.*) ;;
+              *) exit 1 ;;
+          esac
+
+          trap 'rm -rf "$remote_dir"' EXIT
+
+          docker info >/dev/null
+
+          update_env() {
+              key="$1"
+              value="$2"
+
+              printf '%s\n' "$value" | sh -c '
+                  set -eu
+                  key="$1"
+                  env_file="$2"
+                  IFS= read -r value
+                  temp_file="$(mktemp "${env_file}.XXXXXX")"
+                  trap "rm -f \"$temp_file\"" 0 1 2 15
+                  found=false
+
+                  while IFS= read -r line || [ -n "$line" ]; do
+                      case "$line" in
+                          "$key"=*)
+                              printf "%s=%s\n" "$key" "$value"
+                              found=true
+                              ;;
+                          *)
+                              printf "%s\n" "$line"
+                              ;;
+                      esac
+                  done < "$env_file" > "$temp_file"
+
+                  if [ "$found" = false ]; then
+                      printf "%s=%s\n" "$key" "$value" >> "$temp_file"
+                  fi
+
+                  chmod 0600 "$temp_file"
+                  mv "$temp_file" "$env_file"
+              ' sh "$key" "$env_file"
+          }
+
+          install -d -m 0755 "$deploy_dir"
+
+          if ! test -f "$env_file"; then
+              install -m 0600 /dev/null "$env_file"
+          fi
+
+          previous_image="$(sed -n 's/^APP_IMAGE=//p' "$env_file" | tail -n 1)"
+
+          docker load --input "$image_archive"
+          install -m 0644 "$compose_source" "$compose_file"
+
+          host_architecture="$(uname -m)"
+          image_architecture="$(docker image inspect --format '{{.Architecture}}' "$image_name")"
+
+          case "$host_architecture" in
+              x86_64|amd64)
+                  expected_architecture="amd64"
+                  ;;
+              aarch64|arm64)
+                  expected_architecture="arm64"
+                  ;;
+              *)
+                  echo "Unsupported VPS architecture: $host_architecture"
+                  docker image rm "$image_name" || true
+                  exit 1
+                  ;;
+          esac
+
+          if [ "$image_architecture" != "$expected_architecture" ]; then
+              echo "Image architecture $image_architecture does not match VPS architecture $host_architecture"
+              docker image rm "$image_name" || true
+              exit 1
+          fi
+
+          update_env "APP_IMAGE" "$image_name"
+
+          if ! grep -q '^APP_KEY=base64:' "$env_file"; then
+              app_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+              update_env "APP_KEY" "$app_key"
+          fi
+
+          chmod 0600 "$env_file"
+          cd "$deploy_dir"
+
+          docker compose \
+              --project-name yabe \
+              --file "$compose_file" \
+              up \
+              --detach \
+              --no-build \
+              --force-recreate \
+              --remove-orphans
+
+          container_id="$(docker compose --project-name yabe --file "$compose_file" ps --quiet app)"
+          test -n "$container_id"
+
+          attempt=0
+
+          while true; do
+              health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"
+
+              case "$health_status" in
+                  healthy)
+                      break
+                  ;;
+                  unhealthy|exited|dead)
+                      docker logs "$container_id"
+                      exit 1
+                  ;;
+              esac
+
+              attempt=$((attempt + 1))
+
+              if [ "$attempt" -ge 36 ]; then
+                  docker logs "$container_id"
+                  exit 1
+              fi
+
+              sleep 5
+          done
+
+          if [ -n "$previous_image" ] && [ "$previous_image" != "$image_name" ]; then
+              docker image rm "$previous_image" || true
+          fi
+
+          docker compose --project-name yabe --file "$compose_file" ps
+          REMOTE
