@@ -13,7 +13,7 @@ on:
           - linux/arm64
   push:
     branches:
-      - profesorderedes/automatizar-el-despliegue-mediante-github-action
+      - main
 
 permissions:
   contents: read
@@ -24,9 +24,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: >-
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
-      github.ref == 'refs/heads/profesorderedes/automatizar-el-despliegue-mediante-github-action'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     environment: production
     name: Deploy application
     runs-on: ubuntu-latest
