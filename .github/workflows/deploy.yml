@@ -125,7 +125,7 @@ jobs:
 
           remote_dir="$1"
           image_name="$2"
-          deploy_dir="/opt/yabe"
+          deploy_dir="$HOME/yabe"
           env_file="$deploy_dir/.env"
           compose_file="$deploy_dir/compose.yaml"
           image_archive="$remote_dir/image.tar.gz"
@@ -138,11 +138,13 @@ jobs:
 
           trap 'rm -rf "$remote_dir"' EXIT
 
+          docker info >/dev/null
+
           update_env() {
               key="$1"
               value="$2"
 
-              printf '%s\n' "$value" | sudo sh -c '
+              printf '%s\n' "$value" | sh -c '
                   set -eu
                   key="$1"
                   env_file="$2"
@@ -172,19 +174,19 @@ jobs:
               ' sh "$key" "$env_file"
           }
 
-          sudo install -d -m 0755 "$deploy_dir"
+          install -d -m 0755 "$deploy_dir"
 
-          if ! sudo test -f "$env_file"; then
-              sudo install -m 0600 /dev/null "$env_file"
+          if ! test -f "$env_file"; then
+              install -m 0600 /dev/null "$env_file"
           fi
 
-          previous_image="$(sudo sed -n 's/^APP_IMAGE=//p' "$env_file" | tail -n 1)"
+          previous_image="$(sed -n 's/^APP_IMAGE=//p' "$env_file" | tail -n 1)"
 
-          sudo docker load --input "$image_archive"
-          sudo install -m 0644 "$compose_source" "$compose_file"
+          docker load --input "$image_archive"
+          install -m 0644 "$compose_source" "$compose_file"
 
           host_architecture="$(uname -m)"
-          image_architecture="$(sudo docker image inspect --format '{{.Architecture}}' "$image_name")"
+          image_architecture="$(docker image inspect --format '{{.Architecture}}' "$image_name")"
 
           case "$host_architecture" in
               x86_64|amd64)
@@ -195,28 +197,28 @@ jobs:
                   ;;
               *)
                   echo "Unsupported VPS architecture: $host_architecture"
-                  sudo docker image rm "$image_name" || true
+                  docker image rm "$image_name" || true
                   exit 1
                   ;;
           esac
 
           if [ "$image_architecture" != "$expected_architecture" ]; then
               echo "Image architecture $image_architecture does not match VPS architecture $host_architecture"
-              sudo docker image rm "$image_name" || true
+              docker image rm "$image_name" || true
               exit 1
           fi
 
           update_env "APP_IMAGE" "$image_name"
 
-          if ! sudo grep -q '^APP_KEY=base64:' "$env_file"; then
+          if ! grep -q '^APP_KEY=base64:' "$env_file"; then
               app_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
               update_env "APP_KEY" "$app_key"
           fi
 
-          sudo chmod 0600 "$env_file"
+          chmod 0600 "$env_file"
           cd "$deploy_dir"
 
-          sudo docker compose \
+          docker compose \
               --project-name yabe \
               --file "$compose_file" \
               up \
@@ -225,20 +227,20 @@ jobs:
               --force-recreate \
               --remove-orphans
 
-          container_id="$(sudo docker compose --project-name yabe --file "$compose_file" ps --quiet app)"
+          container_id="$(docker compose --project-name yabe --file "$compose_file" ps --quiet app)"
           test -n "$container_id"
 
           attempt=0
 
           while true; do
-              health_status="$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"
+              health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"
 
               case "$health_status" in
                   healthy)
                       break
                   ;;
                   unhealthy|exited|dead)
-                      sudo docker logs "$container_id"
+                      docker logs "$container_id"
                       exit 1
                   ;;
               esac
@@ -246,7 +248,7 @@ jobs:
               attempt=$((attempt + 1))
 
               if [ "$attempt" -ge 36 ]; then
-                  sudo docker logs "$container_id"
+                  docker logs "$container_id"
                   exit 1
               fi
 
@@ -254,8 +256,8 @@ jobs:
           done
 
           if [ -n "$previous_image" ] && [ "$previous_image" != "$image_name" ]; then
-              sudo docker image rm "$previous_image" || true
+              docker image rm "$previous_image" || true
           fi
 
-          sudo docker compose --project-name yabe --file "$compose_file" ps
+          docker compose --project-name yabe --file "$compose_file" ps
           REMOTE
